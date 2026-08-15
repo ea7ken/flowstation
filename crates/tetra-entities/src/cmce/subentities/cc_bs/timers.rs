@@ -562,11 +562,19 @@ impl CcBsSubentity {
 
     /// Handle UL inactivity timeout from UMAC: a radio disappeared mid-transmission.
     /// Force the group floor to released and enter hangtime.
+    ///
+    /// Only calls whose floor is held by a local MS (`local_floor`) are eligible: the timer arms
+    /// off `last_ul_voice`, which a single stray uplink burst in the traffic slot is enough to
+    /// set — a radio keying up while the network speaker holds the floor, or a burst decoded at
+    /// the edge of coverage. Without the check, that lone burst tears down an in-progress
+    /// network call three seconds later and, via `notify_floor_released`, tells the backhaul the
+    /// call is over while it is still streaming. A network-held floor is covered by
+    /// [`Self::check_network_media_inactivity`] and the absolute call time-out instead.
     pub(super) fn handle_ul_inactivity_timeout_slot(&mut self, queue: &mut MessageQueue, carrier_num: u16, ts: u8) {
         let call_id = self
             .active_calls
             .iter()
-            .find(|(_, call)| call.carrier_num == carrier_num && call.ts == ts && call.is_tx_active())
+            .find(|(_, call)| call.carrier_num == carrier_num && call.ts == ts && call.is_tx_active() && call.local_floor)
             .map(|(call_id, _)| *call_id);
 
         let Some(call_id) = call_id else {
