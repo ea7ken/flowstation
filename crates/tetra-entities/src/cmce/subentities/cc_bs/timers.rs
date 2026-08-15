@@ -526,7 +526,9 @@ impl CcBsSubentity {
     /// transmitting are eligible: once GROUP_IDLE arrives the call drops to hang-time
     /// (`tx_active == false`) and the hang-time timer owns its teardown, and local calls never
     /// refresh `last_activity_at` so they are excluded by the origin filter (their stuck-floor
-    /// case is covered by UMAC's UL-inactivity timer).
+    /// case is covered by UMAC's UL-inactivity timer). `local_floor` extends that same exclusion
+    /// to a network-origin call whose floor a local MS has taken over: no backhaul media is due
+    /// while the local radio talks, so the staleness test would otherwise cut it off mid-PTT.
     pub(super) fn check_network_media_inactivity(&mut self, queue: &mut MessageQueue) {
         let stale: Vec<(u16, CallOrigin, u32)> = self
             .active_calls
@@ -534,6 +536,7 @@ impl CcBsSubentity {
             .filter(|(_, call)| {
                 matches!(call.origin, CallOrigin::Network { .. })
                     && call.tx_active
+                    && !call.local_floor
                     && call.last_activity_at.age(self.dltime) > NETWORK_MEDIA_INACTIVITY_TS
             })
             .map(|(&call_id, call)| (call_id, call.origin.clone(), call.dest_gssi))

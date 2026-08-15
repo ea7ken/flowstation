@@ -172,6 +172,11 @@ pub(super) struct ActiveCall {
     /// Brew session UUID — set when a network speaker is active on this call,
     /// regardless of call origin. Cleared when the network speaker ends.
     pub(super) brew_uuid: Option<uuid::Uuid>,
+    /// True while the floor is held by a local MS rather than a network speaker. A network-origin
+    /// call whose floor a local radio has taken over stops seeing backhaul media (the audio now
+    /// flows the other way), so `last_activity_at` goes stale and the network-media watchdog would
+    /// release the call mid-transmission. UMAC's UL-inactivity timer owns the stuck-floor case here.
+    pub(super) local_floor: bool,
 }
 
 impl ActiveCall {
@@ -188,6 +193,7 @@ impl ActiveCall {
         priority: u8,
     ) -> Self {
         Self {
+            local_floor: true,
             origin: CallOrigin::Local { caller_addr },
             dest_gssi,
             source_issi,
@@ -223,6 +229,7 @@ impl ActiveCall {
         priority: u8,
     ) -> Self {
         Self {
+            local_floor: false,
             origin: CallOrigin::Network { brew_uuid },
             dest_gssi,
             source_issi,
@@ -297,6 +304,7 @@ impl ActiveCall {
         self.tx_active = true;
         self.hangtime_start = None;
         self.queued_tx_demand = None;
+        self.local_floor = speaker_addr.is_some();
 
         if let (CallOrigin::Local { caller_addr }, Some(addr)) = (&mut self.origin, speaker_addr) {
             *caller_addr = addr;
